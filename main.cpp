@@ -45,14 +45,14 @@ public:
 static const char* DB_FILE = "data.db";
 
 bool parseSetLine(const std::string& line, std::string& keyOut, std::string& valueOut) {
-    if (line.rfind("SET ", 0) != 0) {
+    if (line.rfind("SET ", 0) != 0 && line.rfind("PUT ", 0) != 0) {
         return false;
     }
 
     std::istringstream iss(line);
     std::string cmd;
 
-    if (!(iss >> cmd) || cmd != "SET") {
+    if (!(iss >> cmd) || (cmd != "SET" && cmd != "PUT")) {
         return false;
     }
 
@@ -121,7 +121,7 @@ int main() {
             break;
         }
 
-        if (line.rfind("SET ", 0) == 0) {
+        if (line.rfind("SET ", 0) == 0 || line.rfind("PUT ", 0) == 0) {
             std::string key, value;
 
             if (!parseSetLine(line, key, value)) {
