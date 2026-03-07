@@ -15,7 +15,7 @@ private:
 
 public:
     int findKey(const std::string& key) const {
-        for (int i = 0; i < static_cast<int>(entries.size()); i++) {
+        for (int i = 0; i < entries.size(); i++) {
             if (entries[i].key == key) {
                 return i;
             }
@@ -25,6 +25,7 @@ public:
 
     void set(const std::string& key, const std::string& value) {
         int idx = findKey(key);
+
         if (idx == -1) {
             entries.push_back({key, value});
         } else {
@@ -32,83 +33,102 @@ public:
         }
     }
 
-    bool get(const std::string& key, std::string& outValue) const {
+    bool get(const std::string& key, std::string& value) const {
         int idx = findKey(key);
+
         if (idx == -1) {
             return false;
         }
-        outValue = entries[idx].value;
+
+        value = entries[idx].value;
         return true;
     }
 };
 
 static const char* DB_FILE = "data.db";
 
-bool parseSetLine(const std::string& line, std::string& keyOut, std::string& valueOut) {
-    if (line.rfind("SET ", 0) != 0 && line.rfind("PUT ", 0) != 0) {
-        return false;
-    }
-
+bool parseSetLine(const std::string& line, std::string& key, std::string& value) {
     std::istringstream iss(line);
+
     std::string cmd;
 
-    if (!(iss >> cmd) || (cmd != "SET" && cmd != "PUT")) {
+    if (!(iss >> cmd)) {
         return false;
     }
 
-    if (!(iss >> keyOut)) {
+    if (cmd != "SET" && cmd != "PUT") {
         return false;
     }
 
-    std::getline(iss, valueOut);
-    if (!valueOut.empty() && valueOut[0] == ' ') {
-        valueOut.erase(0, 1);
+    if (!(iss >> key)) {
+        return false;
+    }
+
+    std::getline(iss, value);
+
+    if (!value.empty() && value[0] == ' ') {
+        value.erase(0, 1);
     }
 
     return true;
 }
 
 void replayLog(KVIndex& index) {
-    std::ifstream in(DB_FILE);
-    if (!in.is_open()) {
+
+    std::ifstream file(DB_FILE);
+
+    if (!file.is_open()) {
         return;
     }
 
     std::string line;
-    while (std::getline(in, line)) {
+
+    while (std::getline(file, line)) {
+
         if (!line.empty() && line.back() == '\r') {
             line.pop_back();
         }
 
-        std::string key, value;
+        std::string key;
+        std::string value;
+
         if (parseSetLine(line, key, value)) {
             index.set(key, value);
         }
     }
 }
 
-bool appendSetToDisk(const std::string& key, const std::string& value) {
-    std::ofstream out(DB_FILE, std::ios::app);
-    if (!out.is_open()) {
+bool appendToDisk(const std::string& command, const std::string& key, const std::string& value) {
+
+    std::ofstream file(DB_FILE, std::ios::app);
+
+    if (!file.is_open()) {
         return false;
     }
 
-    out << "SET " << key;
-    if (!value.empty()) {
-        out << " " << value;
-    }
-    out << "\n";
-    out.flush();
+    file << command << " " << key;
 
-    return out.good();
+    if (!value.empty()) {
+        file << " " << value;
+    }
+
+    file << "\n";
+
+    file.flush();
+
+    return file.good();
 }
 
 int main() {
+
     KVIndex index;
+
     replayLog(index);
 
     std::string line;
+
     while (std::getline(std::cin, line)) {
+
         if (!line.empty() && line.back() == '\r') {
             line.pop_back();
         }
@@ -121,43 +141,51 @@ int main() {
             break;
         }
 
-        if (line.rfind("SET ", 0) == 0 || line.rfind("PUT ", 0) == 0) {
-            std::string key, value;
+        if (line.rfind("SET ",0) == 0 || line.rfind("PUT ",0) == 0) {
+
+            std::string key;
+            std::string value;
 
             if (!parseSetLine(line, key, value)) {
-                std::cout << "ERROR" << std::endl;
+                std::cout << "ERROR\n";
                 continue;
             }
 
-            if (!appendSetToDisk(key, value)) {
-                std::cout << "ERROR" << std::endl;
+            std::string command = line.substr(0,3);
+
+            if (!appendToDisk(command, key, value)) {
+                std::cout << "ERROR\n";
                 continue;
             }
 
-            index.set(key, value);
-            std::cout << "OK" << std::endl;
+            index.set(key,value);
+
+            std::cout << "OK\n";
+
             continue;
         }
 
-        if (line.rfind("GET ", 0) == 0) {
-            std::istringstream iss(line);
-            std::string cmd, key;
+        if (line.rfind("GET ",0) == 0) {
 
-            if (!(iss >> cmd >> key) || cmd != "GET") {
-                std::cout << "ERROR" << std::endl;
-                continue;
-            }
+            std::istringstream iss(line);
+
+            std::string cmd;
+            std::string key;
+
+            iss >> cmd >> key;
 
             std::string value;
-            if (index.get(key, value)) {
-                std::cout << value << std::endl;
+
+            if (index.get(key,value)) {
+                std::cout << value << "\n";
             } else {
-                std::cout << std::endl;
+                std::cout << "\n";
             }
+
             continue;
         }
 
-        std::cout << "ERROR" << std::endl;
+        std::cout << "ERROR\n";
     }
 
     return 0;
