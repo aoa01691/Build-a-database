@@ -3,26 +3,8 @@
 #include <string>
 #include <vector>
 #include <sstream>
+#include <filesystem>
 
-/*
-    Simple persistent key-value store.
-
-    Supported commands:
-    - SET <key> <value>
-    - PUT <key> <value>
-    - GET <key>
-    - EXIT
-
-    Notes:
-    - Data is persisted to data.db using append-only writes.
-    - On startup, the log file is replayed to rebuild in-memory state.
-    - A linear vector-based index is used instead of a hash map because
-      the project explicitly forbids built-in dictionary/map types.
-*/
-
-// -------------------------------
-// Constants
-// -------------------------------
 const std::string CMD_SET  = "SET";
 const std::string CMD_PUT  = "PUT";
 const std::string CMD_GET  = "GET";
@@ -31,31 +13,16 @@ const std::string CMD_EXIT = "EXIT";
 const std::string RESP_OK    = "OK";
 const std::string RESP_ERROR = "ERROR";
 
-const char* DB_FILE = "data.db";
-
-// -------------------------------
-// Data structures
-// -------------------------------
 struct Entry {
     std::string key;
     std::string value;
 };
 
-/*
-    In-memory index for key-value pairs.
-
-    This uses a vector and linear search instead of std::map / std::unordered_map
-    to satisfy the assignment requirement not to rely on built-in dictionary/map types.
-*/
 class KVIndex {
 private:
     std::vector<Entry> entries;
 
 public:
-    /*
-        Find the index of a key in the vector.
-        Returns -1 if the key is not found.
-    */
     int findKey(const std::string& key) const {
         for (int i = 0; i < static_cast<int>(entries.size()); i++) {
             if (entries[i].key == key) {
@@ -65,10 +32,6 @@ public:
         return -1;
     }
 
-    /*
-        Insert or overwrite a key-value pair.
-        Last write wins.
-    */
     void set(const std::string& key, const std::string& value) {
         int idx = findKey(key);
 
@@ -79,10 +42,6 @@ public:
         }
     }
 
-    /*
-        Retrieve a value by key.
-        Returns true if found, false otherwise.
-    */
     bool get(const std::string& key, std::string& outValue) const {
         int idx = findKey(key);
 
@@ -95,17 +54,6 @@ public:
     }
 };
 
-// -------------------------------
-// Parsing helpers
-// -------------------------------
-
-/*
-    Parse a SET-like command line:
-    SET <key> <value>
-    PUT <key> <value>
-
-    Returns true on success and fills cmdOut, keyOut, valueOut.
-*/
 bool parseSetLikeCommand(
     const std::string& line,
     std::string& cmdOut,
@@ -135,18 +83,14 @@ bool parseSetLikeCommand(
     return true;
 }
 
-// -------------------------------
-// Persistence helpers
-// -------------------------------
+std::filesystem::path getDatabasePath(const char* argv0) {
+    std::filesystem::path exePath = std::filesystem::absolute(argv0);
+    std::filesystem::path exeDir = exePath.parent_path();
+    return exeDir / "data.db";
+}
 
-/*
-    Replay the append-only log from disk into memory.
-
-    Every valid SET/PUT line found in data.db is applied to the index.
-    Since writes are replayed in order, last write wins naturally.
-*/
-void replayLog(KVIndex& index) {
-    std::ifstream in(DB_FILE);
+void replayLog(KVIndex& index, const std::filesystem::path& dbPath) {
+    std::ifstream in(dbPath);
 
     if (!in.is_open()) {
         return;
@@ -169,17 +113,13 @@ void replayLog(KVIndex& index) {
     }
 }
 
-/*
-    Append a SET/PUT command to disk immediately.
-
-    Returns true if the write succeeds, false otherwise.
-*/
 bool appendToDisk(
+    const std::filesystem::path& dbPath,
     const std::string& cmd,
     const std::string& key,
     const std::string& value
 ) {
-    std::ofstream out(DB_FILE, std::ios::app);
+    std::ofstream out(dbPath, std::ios::app);
 
     if (!out.is_open()) {
         return false;
@@ -190,32 +130,21 @@ bool appendToDisk(
         out << " " << value;
     }
     out << "\n";
-
     out.flush();
 
     return out.good();
 }
 
-// -------------------------------
-// Command handlers
-// -------------------------------
-
-/*
-    Handle SET/PUT.
-
-    printSetResponse:
-    - true  -> print OK / ERROR (used for interactive/stdin mode)
-    - false -> suppress OK on success (useful if tester expects quiet CLI set mode)
-*/
 void handleSetLike(
     KVIndex& index,
+    const std::filesystem::path& dbPath,
     const std::string& cmd,
     const std::string& key,
     const std::string& value,
     bool printSetResponse
 ) {
-    if (!appendToDisk(cmd, key, value)) {
-        std::cout << RESP_ERROR << std::endl;
+    if (!appendToDisk(dbPath, cmd, key, value)) {
+        std::cout << RESP_ERROR << ": failed to write to data.db" << std::endl;
         return;
     }
 
@@ -226,12 +155,6 @@ void handleSetLike(
     }
 }
 
-/*
-    Handle GET.
-
-    If key exists, print the value.
-    If not, print an empty line.
-*/
 void handleGet(const KVIndex& index, const std::string& key) {
     std::string value;
 
@@ -242,21 +165,12 @@ void handleGet(const KVIndex& index, const std::string& key) {
     }
 }
 
-// -------------------------------
-// Main
-// -------------------------------
-
 int main(int argc, char* argv[]) {
-    KVIndex index;
-    replayLog(index);
+    std::filesystem::path dbPath = getDatabasePath(argv[0]);
 
-    /*
-        Command-line mode:
-        kvstore.exe SET key value
-        kvstore.exe PUT key value
-        kvstore.exe GET key
-        kvstore.exe EXIT
-    */
+    KVIndex index;
+    replayLog(index, dbPath);
+
     if (argc >= 2) {
         std::string cmd = argv[1];
 
@@ -269,7 +183,7 @@ int main(int argc, char* argv[]) {
                 value += argv[i];
             }
 
-            handleSetLike(index, cmd, key, value, false);
+            handleSetLike(index, dbPath, cmd, key, value, false);
             return 0;
         }
 
@@ -287,9 +201,6 @@ int main(int argc, char* argv[]) {
         return 0;
     }
 
-    /*
-        Interactive / piped stdin mode
-    */
     std::string line;
 
     while (std::getline(std::cin, line)) {
@@ -310,7 +221,7 @@ int main(int argc, char* argv[]) {
         std::string value;
 
         if (parseSetLikeCommand(line, cmd, key, value)) {
-            handleSetLike(index, cmd, key, value, true);
+            handleSetLike(index, dbPath, cmd, key, value, true);
             continue;
         }
 
