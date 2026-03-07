@@ -15,7 +15,7 @@ private:
 
 public:
     int findKey(const std::string& key) const {
-        for (int i = 0; i < (int)entries.size(); i++) {
+        for (int i = 0; i < static_cast<int>(entries.size()); i++) {
             if (entries[i].key == key) {
                 return i;
             }
@@ -104,8 +104,6 @@ bool appendSetToDisk(const std::string& key, const std::string& value) {
 }
 
 int main() {
-    std::cout << "EUID: aoa0169" << std::endl;
-
     KVIndex index;
     replayLog(index);
 
@@ -127,17 +125,17 @@ int main() {
             std::string key, value;
 
             if (!parseSetLine(line, key, value)) {
-                std::cout << "ERROR\n";
+                std::cout << "ERROR" << std::endl;
                 continue;
             }
 
             if (!appendSetToDisk(key, value)) {
-                std::cout << "ERROR\n";
+                std::cout << "ERROR" << std::endl;
                 continue;
             }
 
             index.set(key, value);
-            std::cout << "OK\n";
+            std::cout << "OK" << std::endl;
             continue;
         }
 
@@ -146,20 +144,20 @@ int main() {
             std::string cmd, key;
 
             if (!(iss >> cmd >> key) || cmd != "GET") {
-                std::cout << "ERROR\n";
+                std::cout << "ERROR" << std::endl;
                 continue;
             }
 
             std::string value;
             if (index.get(key, value)) {
-                std::cout << value << "\n";
+                std::cout << value << std::endl;
             } else {
-                std::cout << "\n";
+                std::cout << std::endl;
             }
             continue;
         }
 
-        std::cout << "ERROR\n";
+        std::cout << "ERROR" << std::endl;
     }
 
     return 0;
